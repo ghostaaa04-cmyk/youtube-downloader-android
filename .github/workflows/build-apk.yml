@@ -32,36 +32,44 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install "cython<3" buildozer
 
-      - name: Prepare Android SDK
-        run: |
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
-
-          SDKMANAGER=$(find "$HOME/.buildozer" -type f -name sdkmanager 2>/dev/null | head -n 1 || true)
-
-          if [ -n "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses || true
-          fi
-
-      - name: First Buildozer setup
+      - name: Initialize Buildozer
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
           buildozer android update || true
 
-      - name: Accept Android licenses
+      - name: Accept Android licenses and install SDK packages
         run: |
-          SDKMANAGER=$(find "$HOME/.buildozer" -type f -name sdkmanager 2>/dev/null | head -n 1 || true)
+          SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
+          SDKMANAGER="$SDK_ROOT/tools/bin/sdkmanager"
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager not found"
-            find "$HOME/.buildozer" -maxdepth 6 -type f | head -200
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found at: $SDKMANAGER"
+            find "$HOME/.buildozer/android/platform" -type f -name sdkmanager -print
             exit 1
           fi
 
-          chmod +x "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          mkdir -p "$SDK_ROOT/licenses"
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" \
+            --licenses || true
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Verify Android SDK
+        run: |
+          SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
+
+          test -f "$SDK_ROOT/platforms/android-35/android.jar"
+          test -x "$SDK_ROOT/build-tools/35.0.0/aidl"
+
+          echo "Android SDK is ready"
+          ls -la "$SDK_ROOT/build-tools/35.0.0"
 
       - name: Build debug APK
         env:
