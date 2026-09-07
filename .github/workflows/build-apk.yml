@@ -68,6 +68,12 @@ jobs:
 
           yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
 
+      - name: Fix Buildozer sdkmanager path
+        run: |
+          mkdir -p "$ANDROID_HOME/tools/bin"
+          ln -sf "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "$ANDROID_HOME/tools/bin/sdkmanager"
+
       - name: Build debug APK
         run: |
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/37.0.0:$PATH"
