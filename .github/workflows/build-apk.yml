@@ -82,6 +82,8 @@ jobs:
 
           mkdir -p "$SDK_ROOT/tools/bin"
 
+          rm -f "$SDK_ROOT/tools/bin/sdkmanager"
+
           cat > "$SDK_ROOT/tools/bin/sdkmanager" <<'EOF'
           #!/usr/bin/env bash
           exec "$HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager" "$@"
@@ -126,8 +128,7 @@ jobs:
           test -x "$SDK_ROOT/tools/bin/sdkmanager"
 
           echo "Android SDK ready"
-          echo "AIDL:"
-          "$SDK_ROOT/build-tools/37.0.0/aidl" --help >/dev/null 2>&1 || true
+          echo "AIDL ready"
 
       - name: Build debug APK
         env:
