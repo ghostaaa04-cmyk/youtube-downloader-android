@@ -12,11 +12,7 @@ jobs:
 
     env:
       JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-      ANDROID_HOME: /home/runner/android-sdk
-      ANDROID_SDK_ROOT: /home/runner/android-sdk
-      ANDROID_NDK_HOME: /home/runner/android-sdk/ndk/28.2.13676358
-      ANDROIDNDK: /home/runner/android-sdk/ndk/28.2.13676358
-      ANDROIDSDK: /home/runner/android-sdk
+      BUILDOZER_SDK: /home/runner/.buildozer/android/platform/android-sdk
 
     steps:
       - name: Checkout
@@ -60,9 +56,15 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install buildozer cython
 
-      - name: Install Android command line tools
+      - name: Initialize Buildozer Android files
         run: |
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          buildozer android update || true
+
+      - name: Fix Buildozer Android SDK
+        run: |
+          SDK_ROOT="$BUILDOZER_SDK"
+
+          mkdir -p "$SDK_ROOT/cmdline-tools"
 
           curl -L -o /tmp/cmdline-tools.zip \
             https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
@@ -72,43 +74,60 @@ jobs:
 
           unzip -q /tmp/cmdline-tools.zip -d /tmp/android-cmdline
 
-          mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
+          rm -rf "$SDK_ROOT/cmdline-tools/latest"
+          mkdir -p "$SDK_ROOT/cmdline-tools/latest"
+
           mv /tmp/android-cmdline/cmdline-tools/* \
-            "$ANDROID_HOME/cmdline-tools/latest/"
+            "$SDK_ROOT/cmdline-tools/latest/"
 
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          mkdir -p "$SDK_ROOT/tools/bin"
 
-      - name: Install Android SDK and NDK
+          cat > "$SDK_ROOT/tools/bin/sdkmanager" <<'EOF'
+          #!/usr/bin/env bash
+          exec "$HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager" "$@"
+          EOF
+
+          chmod +x "$SDK_ROOT/tools/bin/sdkmanager"
+
+      - name: Accept Buildozer SDK licenses
         run: |
+          SDK_ROOT="$BUILDOZER_SDK"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
           mkdir -p "$HOME/.android"
           touch "$HOME/.android/repositories.cfg"
 
-          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
+          yes | "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" \
+            --licenses || true
 
-          sdkmanager --sdk_root="$ANDROID_HOME" \
+      - name: Install Android packages in Buildozer SDK
+        run: |
+          SDK_ROOT="$BUILDOZER_SDK"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0" \
-            "ndk;28.2.13676358"
+            "build-tools;37.0.0"
 
-          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
+          yes | "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" \
+            --licenses || true
 
-      - name: Verify toolchain
+      - name: Verify Buildozer SDK
         run: |
-          echo "SDK:"
-          ls "$ANDROID_HOME/platforms/android-35/android.jar"
+          SDK_ROOT="$BUILDOZER_SDK"
 
-          echo "NDK:"
-          ls "$ANDROID_NDK_HOME"
+          test -f "$SDK_ROOT/platforms/android-35/android.jar"
+          test -x "$SDK_ROOT/build-tools/37.0.0/aidl"
+          test -x "$SDK_ROOT/tools/bin/sdkmanager"
 
-          echo "Clang:"
-          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-
-      - name: Clean previous Buildozer state
-        run: |
-          rm -rf .buildozer
-          rm -rf bin
+          echo "Android SDK ready"
+          echo "AIDL:"
+          "$SDK_ROOT/build-tools/37.0.0/aidl" --help >/dev/null 2>&1 || true
 
       - name: Build debug APK
         env:
