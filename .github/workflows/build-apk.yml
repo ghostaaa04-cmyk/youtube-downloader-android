@@ -46,7 +46,7 @@ jobs:
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
-          buildozer -v android debug
+          yes | buildozer -v android debug
 
       - name: Collect APK
         run: |
