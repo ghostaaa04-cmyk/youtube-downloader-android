@@ -25,28 +25,49 @@ jobs:
           sudo apt-get install -y \
             git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev cmake \
-            libffi-dev libssl-dev automake gettext
+            libffi-dev libssl-dev automake gettext wget
 
       - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install "cython<3" buildozer
 
-      - name: Cache Buildozer downloads
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.buildozer
-            .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-${{ runner.os }}-
+      - name: Prepare Android SDK
+        run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+
+          SDKMANAGER=$(find "$HOME/.buildozer" -type f -name sdkmanager 2>/dev/null | head -n 1 || true)
+
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses || true
+          fi
+
+      - name: First Buildozer setup
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+        run: |
+          buildozer android update || true
+
+      - name: Accept Android licenses
+        run: |
+          SDKMANAGER=$(find "$HOME/.buildozer" -type f -name sdkmanager 2>/dev/null | head -n 1 || true)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found"
+            find "$HOME/.buildozer" -maxdepth 6 -type f | head -200
+            exit 1
+          fi
+
+          chmod +x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Build debug APK
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
-          yes | buildozer -v android debug
+          buildozer -v android debug
 
       - name: Collect APK
         run: |
