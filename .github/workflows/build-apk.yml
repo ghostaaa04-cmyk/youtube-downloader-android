@@ -10,6 +10,12 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 90
 
+    env:
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      ANDROID_HOME: /home/runner/.buildozer/android/platform/android-sdk
+      ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
+      ANDROIDSDK: /home/runner/.buildozer/android/platform/android-sdk
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,56 +31,46 @@ jobs:
           sudo apt-get install -y \
             git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev cmake \
-            libffi-dev libssl-dev automake gettext wget
+            libffi-dev libssl-dev automake gettext curl
 
       - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install "cython<3" buildozer
 
-      - name: Initialize Buildozer
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      - name: Install Android SDK and accept licenses
         run: |
-          buildozer android update || true
+          rm -rf "$ANDROID_HOME"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
 
-      - name: Accept Android licenses and install SDK packages
-        run: |
-          SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
-          SDKMANAGER="$SDK_ROOT/tools/bin/sdkmanager"
+          curl -L -o /tmp/cmdline-tools.zip \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
 
-          if [ ! -x "$SDKMANAGER" ]; then
-            echo "sdkmanager not found at: $SDKMANAGER"
-            find "$HOME/.buildozer/android/platform" -type f -name sdkmanager -print
-            exit 1
-          fi
+          rm -rf /tmp/android-cmdline
+          mkdir -p /tmp/android-cmdline
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/android-cmdline
 
-          mkdir -p "$SDK_ROOT/licenses"
+          mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
+          mv /tmp/android-cmdline/cmdline-tools/* "$ANDROID_HOME/cmdline-tools/latest/"
 
-          yes | "$SDKMANAGER" \
-            --sdk_root="$SDK_ROOT" \
-            --licenses || true
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-          yes | "$SDKMANAGER" \
-            --sdk_root="$SDK_ROOT" \
+          mkdir -p "$HOME/.android"
+          touch "$HOME/.android/repositories.cfg"
+
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
+
+          sdkmanager --sdk_root="$ANDROID_HOME" \
             "platform-tools" \
             "platforms;android-35" \
-            "build-tools;35.0.0"
+            "build-tools;35.0.0" \
+            "build-tools;37.0.0"
 
-      - name: Verify Android SDK
-        run: |
-          SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
-
-          test -f "$SDK_ROOT/platforms/android-35/android.jar"
-          test -x "$SDK_ROOT/build-tools/35.0.0/aidl"
-
-          echo "Android SDK is ready"
-          ls -la "$SDK_ROOT/build-tools/35.0.0"
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
 
       - name: Build debug APK
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/37.0.0:$PATH"
           buildozer -v android debug
 
       - name: Collect APK
