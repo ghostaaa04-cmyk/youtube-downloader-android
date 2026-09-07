@@ -1,1 +1,150 @@
+name: Build Android APK with p4a
 
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    env:
+      ANDROID_SDK_ROOT: /home/runner/android-sdk
+      ANDROID_NDK_HOME: /home/runner/android-sdk/ndk/28.2.13676358
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ant \
+            autoconf \
+            automake \
+            autopoint \
+            ccache \
+            cmake \
+            g++ \
+            gcc \
+            git \
+            lbzip2 \
+            libffi-dev \
+            libltdl-dev \
+            libtool \
+            libssl-dev \
+            make \
+            patch \
+            pkg-config \
+            python3-dev \
+            unzip \
+            wget \
+            zip \
+            openjdk-17-jdk \
+            curl
+
+      - name: Install python-for-android
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install cython
+          python -m pip install "python-for-android==2026.5.9"
+
+      - name: Install Android command line tools
+        run: |
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+
+          curl -L \
+            -o /tmp/cmdline-tools.zip \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+
+          rm -rf /tmp/android-tools
+          mkdir -p /tmp/android-tools
+
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/android-tools
+
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+
+          mv /tmp/android-tools/cmdline-tools/* \
+            "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
+
+      - name: Accept Android licenses
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          mkdir -p "$HOME/.android"
+          touch "$HOME/.android/repositories.cfg"
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_SDK_ROOT" \
+            --licenses || true
+
+      - name: Install Android SDK and NDK
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          "$SDKMANAGER" \
+            --sdk_root="$ANDROID_SDK_ROOT" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;28.2.13676358"
+
+      - name: Verify Android environment
+        run: |
+          test -f "$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
+          test -d "$ANDROID_NDK_HOME"
+          test -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+
+          echo "SDK OK"
+          echo "NDK OK"
+          python --version
+          p4a --version
+
+      - name: Build APK
+        run: |
+          p4a apk \
+            --private . \
+            --package=com.example.pytubedownloader \
+            --name="YouTube Downloader" \
+            --version=1.0.0 \
+            --bootstrap=sdl2 \
+            --requirements=python3,kivy,yt-dlp,pyjnius \
+            --permission=INTERNET \
+            --orientation=portrait \
+            --arch=arm64-v8a \
+            --android-api=35 \
+            --ndk-api=24 \
+            --sdk-dir="$ANDROID_SDK_ROOT" \
+            --ndk-dir="$ANDROID_NDK_HOME" \
+            --debug
+
+      - name: Find APK
+        run: |
+          echo "Searching for APK..."
+          find . -type f -name "*.apk" -print
+
+          APK="$(find . -type f -name "*.apk" | head -n 1)"
+
+          if [ -z "$APK" ]; then
+            echo "APK not found"
+            exit 1
+          fi
+
+          mkdir -p artifacts
+          cp "$APK" artifacts/youtube-downloader.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-downloader-apk
+          path: artifacts/youtube-downloader.apk
+          if-no-files-found: error
